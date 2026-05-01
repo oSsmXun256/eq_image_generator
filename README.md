@@ -1,1 +1,1 @@
-# eq_image_generator
+# 地震地図ジェネレーター
