@@ -3,8 +3,6 @@
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-# 今後の予定
-[ロードマップ](./ROADMAP.md)
 
 地震情報を与えると震源マップ画像を生成・返却する軽量なウェブAPIです。
 
