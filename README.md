@@ -1,6 +1,6 @@
-# 震源マップAPI (Ver. 1.0.0)
+# 震源マップAPI (Ver. 1.0.1)
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/oSsmXun256/eq_image_generator/releases)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/oSsmXun256/eq_image_generator/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 
