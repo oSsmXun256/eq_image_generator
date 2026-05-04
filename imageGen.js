@@ -6,6 +6,7 @@ const {
   buildMapPaths,
   buildGrid,
   computeViewport,
+  JAPAN_VIEWPORT,
   IMG_W,
   IMG_H,
 } = require('./japanMap');
@@ -37,17 +38,8 @@ const ZOOM_RADIUS_KM = 400;
 
 /** Cross polygon SVG path (X印) */
 function crossPath(cx, cy, r) {
-  const w = r * 0.7; 
+  const w = r * 0.7;
   return `M${(cx - w).toFixed(1)},${(cy - w).toFixed(1)} L${(cx + w).toFixed(1)},${(cy + w).toFixed(1)} M${(cx + w).toFixed(1)},${(cy - w).toFixed(1)} L${(cx - w).toFixed(1)},${(cy + w).toFixed(1)}`;
-}
-
-/** Circle representing radius in SVG pixels. */
-function radiusCircle(cx, cy, radiusKm, vp) {
-  const latSpan = vp.latMax - vp.latMin;
-  const pxPerDeg = IMG_H / latSpan;
-  const pxPerKm = pxPerDeg / 111;
-  const r = radiusKm * pxPerKm;
-  return { cx, cy, r };
 }
 
 /** Escape XML special chars. */
@@ -63,7 +55,7 @@ function esc(str) {
  * Build the info box SVG (top-left).
  */
 function buildInfoBox(params, intColor) {
-  const { type, lat, lng, int: intensity, mag, dep, loc, serial, final } = params;
+  const { type, lat, lng, int: intensity, mag, dep, loc, serial } = params;
 
   const lines = [];
   if (type === 'eew') {
@@ -75,6 +67,8 @@ function buildInfoBox(params, intColor) {
   lines.push(`震源地: ${loc}`);
   lines.push(`最大震度: ${INTENSITY_LABEL[intensity] ?? intensity}`);
   lines.push(`マグニチュード: M${mag}`);
+  // fix: dep は index.js で parseFloat 済みの純粋な数値文字列が渡されるため
+  //      ここで km を付与しても重複しない ("10" → "深さ: 10km")
   lines.push(`深さ: ${dep}km`);
   lines.push(`緯度/経度: ${lat}, ${lng}`);
 
@@ -105,7 +99,7 @@ function buildInfoBox(params, intColor) {
 // ── Main export ──────────────────────────────────────────────
 
 /**
- * Generate earthquake map image as PNG Buffer.
+ * Generate earthquake map image as JPEG Buffer.
  * @param {object} params - validated query params
  * @returns {Promise<Buffer>}
  */
@@ -116,7 +110,16 @@ async function generateImage(params) {
   const cLon = parseFloat(lng);
 
   // ── Viewport: 400km zoom centered on epicenter ──
-  const vp = computeViewport(cLon, cLat, ZOOM_RADIUS_KM);
+  // fix: 震源が日本の端（小笠原・沖縄南端など）でビューポートが海ばかりに
+  //      なるケースへのフォールバックとして JAPAN_VIEWPORT を使用する
+  let vp = computeViewport(cLon, cLat, ZOOM_RADIUS_KM);
+  const isInJapanBounds = (
+    cLat >= JAPAN_VIEWPORT.latMin && cLat <= JAPAN_VIEWPORT.latMax &&
+    cLon >= JAPAN_VIEWPORT.lonMin && cLon <= JAPAN_VIEWPORT.lonMax
+  );
+  if (!isInJapanBounds) {
+    vp = JAPAN_VIEWPORT;
+  }
 
   // ── Map ──
   const mapPaths = buildMapPaths(vp);
@@ -125,21 +128,18 @@ async function generateImage(params) {
   // ── Epicenter pixel position ──
   const ep = geo2px(cLon, cLat, vp);
 
-  // ── 予想円 + 10km radius ring ──
-  // 現在はZOOM_RADIUS_KM(400)を基準としていますが、別の変数がある場合は置き換えてください
-  const EXPECTED_RADIUS = ZOOM_RADIUS_KM; 
-  const rc = radiusCircle(ep.x, ep.y, EXPECTED_RADIUS + 10, vp);
-
   // ── Cross marker (X印) ──
-  const crossR = 28; // サイズアップ
+  const crossR = 28;
   const crossD = crossPath(ep.x, ep.y, crossR);
 
   // ── Pulse rings ──
-  const pulseRings = [0, 0.4, 0.8].map(delay => `
-    <circle cx="${ep.x.toFixed(1)}" cy="${ep.y.toFixed(1)}" r="${crossR + 8}" fill="none" stroke="${intColor}" stroke-width="4" opacity="0">
-      <animate attributeName="r" values="${crossR + 8};${crossR + 72}" dur="2s" begin="${delay}s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.85;0" dur="2s" begin="${delay}s" repeatCount="indefinite"/>
-    </circle>`).join('');
+  // 注意: sharp でラスタライズするため SVG アニメーションは静止画として描画される。
+  // 最初のフレーム (opacity=0.85, r=crossR+8) が表示される。
+  const pulseRings = [0, 0.4, 0.8].map((delay, i) => {
+    // 静止画として見栄えよく、最初のリングだけ表示し残りはopacity=0にする
+    const opacity = i === 0 ? '0.6' : '0';
+    return `<circle cx="${ep.x.toFixed(1)}" cy="${ep.y.toFixed(1)}" r="${(crossR + 20 + i * 18).toFixed(1)}" fill="none" stroke="${intColor}" stroke-width="3" opacity="${opacity}"/>`;
+  }).join('');
 
   // ── Info box ──
   const infoBox = buildInfoBox(params, intColor);
@@ -185,10 +185,6 @@ async function generateImage(params) {
 
   <g id="japan">${mapPaths}</g>
 
-  <circle cx="${rc.cx.toFixed(1)}" cy="${rc.cy.toFixed(1)}" r="${rc.r.toFixed(1)}"
-          fill="none" stroke="${intColor}" stroke-width="2.4"
-          stroke-dasharray="12,8" opacity="0.45"/>
-
   ${pulseRings}
 
   <g filter="url(#starGlow)">
@@ -204,9 +200,9 @@ async function generateImage(params) {
   ${watermark}
 </svg>`;
 
-  // 高画質化のためPNGに変更
+  // fix: 仕様書に合わせて JPEG で出力する
   return sharp(Buffer.from(svg))
-    .png()
+    .jpeg({ quality: 92 })
     .toBuffer();
 }
 

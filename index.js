@@ -54,7 +54,8 @@ function parseParams(q) {
       lng: lngN,
       int: intensity,
       mag: magN,
-      dep: dep.trim(),
+      // fix: "10km" のような文字列が来ても数値部分のみ抽出して正規化する
+      dep: String(parseFloat(dep)),
       loc: loc.trim(),
       serial: serialN,
       final: finalFlag,
@@ -75,9 +76,9 @@ app.get('/eqimg/', async (req, res) => {
   try {
     const imgBuf = await generateImage(parsed.params);
 
-    // PNGに変更したため Content-Type を修正
+    // fix: 仕様書に合わせて JPEG で返す
     res.set({
-      'Content-Type': 'image/png',
+      'Content-Type': 'image/jpeg',
       'Cache-Control': 'public, max-age=300, s-maxage=300',
       'X-Content-Type-Options': 'nosniff',
     });
